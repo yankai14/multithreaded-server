@@ -4,8 +4,11 @@
 
 #include "transport/BaseSocket.h"
 
-
 int main() {
     Transport::BaseSocket baseSocket(8080, Transport::TCP);
+
     baseSocket.initSocket();
+    baseSocket.initKq();
+    baseSocket.registerServerFdToKq();
+    baseSocket.listenToEvent();
 }

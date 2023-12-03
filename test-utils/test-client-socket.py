@@ -14,6 +14,9 @@ try:
     message = "Hello, server!"
     client_socket.sendall(message.encode())
 
+    while True:
+        print()
+
 finally:
     # Close the socket
     client_socket.close()
