@@ -5,7 +5,8 @@
 #include "BaseSocket.h"
 
 namespace Transport {
-    BaseSocket::BaseSocket(int port, TransportProtocol protocol): port(port), protocol(protocol) {}
+    BaseSocket::BaseSocket(int port, TransportProtocol protocol, int workers): port(port), protocol(protocol),
+                                                                               workerPool(workers) {}
 
     int BaseSocket::initSocket() {
         sockaddr_in serverAddress{};

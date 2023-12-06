@@ -5,6 +5,8 @@
 #ifndef MULTITHREADED_SERVER_BASESOCKET_H
 #define MULTITHREADED_SERVER_BASESOCKET_H
 
+#include "../ThreadPool/ThreadPool.h"
+
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <string>
@@ -26,8 +28,10 @@ namespace Transport {
 
         int kq = -1;
         struct kevent events[MAX_EVENTS]{};
+
+        ThreadPool workerPool;
     public:
-        BaseSocket(int port, TransportProtocol protocol);
+        BaseSocket(int port, TransportProtocol protocol, int workers);
 
         int initSocket();
 
