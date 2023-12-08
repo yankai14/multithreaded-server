@@ -15,33 +15,26 @@
 #include <variant>
 #include <unistd.h>
 #include <sys/event.h>
+#include <sstream>
+#include <csignal>
 
 namespace Transport {
     enum TransportProtocol {UDP, TCP};
     const int MAX_EVENTS = 1000;
+    extern volatile sig_atomic_t g_stopSignal;
 
     class BaseSocket {
     private:
         int port = 8080;
         TransportProtocol protocol;
-        int serverSocketFd = -1;
 
-        int kq = -1;
-        struct kevent events[MAX_EVENTS]{};
-
-        ThreadPool workerPool;
     public:
-        BaseSocket(int port, TransportProtocol protocol, int workers);
+        int serverSocketFd = -1;
+        BaseSocket(int port, TransportProtocol protocol);
 
         int initSocket();
+        void cleanup();
 
-        int initKq();
-        int registerServerFdToKq() const;
-        int handleAcceptEvent() const;
-        int handleReadEvent(int clientFd) const;
-        int listenToEvent();
-
-        void cleanup() const;
         ~BaseSocket();
     };
 
