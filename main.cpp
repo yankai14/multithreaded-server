@@ -2,13 +2,13 @@
 // Created by Yan Kai Lim on 3/12/23.
 //
 
-#include "transport/BaseSocket.h"
+#include "application/HTTP.h"
 
 int main() {
-    Transport::BaseSocket baseSocket(8080, Transport::TCP, 1);
-
-    baseSocket.initSocket();
-    baseSocket.initKq();
-    baseSocket.registerServerFdToKq();
-    baseSocket.listenToEvent();
+    // TODO: Rule of 5
+    Application::HTTP http(8080, 4);
+    http.registerEndpoint("GET", "127.0.0.1:8080", [] (Application::HTTP* http, const Application::HttpRequest& req) -> std::string {
+        return "Hello world";
+    });
+    http.startServer();
 }
