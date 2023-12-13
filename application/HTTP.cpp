@@ -8,6 +8,11 @@
 namespace Application {
     volatile sig_atomic_t g_stopSignal = 0;
 
+    std::string OK = "HTTP/1.1 200 OK\r\n";
+    std::string CREATED = "HTTP/1.1 201 Created\r\n";
+    std::string BAD_REQUEST = "HTTP/1.1 400 Bad Request\r\n";
+    std::string NOT_FOUND = "HTTP/1.1 404 Not Found\r\n";
+
     HTTP::HTTP(int port, int workers): serverSocket(std::make_unique<Transport::BaseSocket>(port, Transport::TransportProtocol::TCP)),
                                        threadpool(workers) {
         struct sigaction sigIntHandler{};
@@ -18,18 +23,36 @@ namespace Application {
         sigaction(SIGTERM, &sigIntHandler, nullptr);
     }
 
-    HttpRequest HTTP::parse(std::istringstream iss) {
+    void HTTP::parse(std::istringstream iss, std::unordered_map<std::string, std::string>& req) {
         std::string word;
         std::vector<std::string> rawContent;
         HttpRequest request;
 
-        iss >> request.method;
-        iss >> word; // Skip
-        iss >> request.httpVersion;
-        iss >> word;
-        iss >> request.path;
+        std::vector<std::string> rawReq;
+        while (std::getline(iss, word, '\n')) {
+            word = Utils::split(word, '\r')[0];
+            rawReq.push_back(std::move(word));
+        }
 
-        return request;
+        if (rawReq.begin() == rawReq.end()) return;
+
+        std::vector<std::string> methodAndHTTPVersion = Utils::split(*rawReq.begin(), '/');
+        if (methodAndHTTPVersion.size() != 3) return;
+        req["Method"] = methodAndHTTPVersion[0];
+        req["HttpVersion"] = methodAndHTTPVersion[1] + '/' + methodAndHTTPVersion[2];
+        Utils::trim(req["Method"]);
+        Utils::trim(req["HttpVersion"]);
+
+        for (auto it=rawReq.begin()+1; it!=rawReq.end(); it++) {
+            auto [headerName, headerValue] = Utils::splitFirst(*it, ':');
+            if (headerValue.empty()) return;
+            req[headerName] = headerValue;
+            Utils::trim(req[headerName]);
+        }
+
+        assert(!req["Host"].empty());
+        assert(!req["Accept"].empty());
+        assert(!req["Connection"].empty());
     }
 
     int HTTP::initKq() {
@@ -58,6 +81,7 @@ namespace Application {
         int client_fd = accept(serverSocket->serverSocketFd, (struct sockaddr*)&client_addr, &client_len);
         if (client_fd == -1) {
             std::cerr << "Unable to accept client connection" << std::endl;
+            return -1;
         }
 
         std::cout << "Connection with client " << client_fd << " has been established" << std::endl;
@@ -95,9 +119,8 @@ namespace Application {
     }
 
     int HTTP::listenToEvent(std::function<void(HTTP*, int, std::istringstream&&)>&& handler) {
-        struct timespec timeout = {1, 0};  // 1-second timeout
         while (!g_stopSignal) {
-            int num_events = kevent(kq, nullptr, 0, events, MAX_EVENTS, &timeout);
+            int num_events = kevent(kq, nullptr, 0, events, MAX_EVENTS, nullptr);
             if (num_events == -1) {
                 if (errno == EINTR) break;
                 std::cerr << "kevent wait failed" << std::endl;
@@ -146,7 +169,7 @@ namespace Application {
         }
     }
 
-    void HTTP::registerEndpoint(const std::string& method, const std::string& path, std::function<std::string(HTTP*, HttpRequest&)> handler) {
+    void HTTP::registerEndpoint(const std::string& method, const std::string& path, std::function<std::string(HTTP*, std::unordered_map<std::string, std::string>&)> handler) {
         router[method + " " + path] = std::move(handler);
     }
 
@@ -155,18 +178,31 @@ namespace Application {
         initKq();
         registerServerFdToKq();
         listenToEvent([](HTTP* http, int clientFd, std::istringstream&& iss)->void {
-            HttpRequest req = http->parse(std::move(iss));
-            std::string path = req.method + " " + req.path;
+            if (http == nullptr) {
+                std::cerr << "http instance argument is NULL" << std::endl;
+                return;
+            };
+            std::unordered_map<std::string, std::string> req;
+            http->parse(std::move(iss), req);
+            std::string path = req["Method"] + " " + req["Host"];
             if (http->router.find(path) != http->router.end()) {
                 std::string content = http->router[path](http, req);
                 std::string contentLengthHeader = "Content-Length: " + std::to_string(content.size());
                 std::string header =
-                        "HTTP/1.1 200 OK\r\n"
                         "Content-Type: text/html\r\n"
                         "Accept-Ranges: bytes\r\n"
-                        "Connection: close\r\n"
+                        "Connection: keep-alive\r\n"
                         + contentLengthHeader + "\r\n";
-                std::string msg = header + "\r\n" + content;
+                std::string msg = OK + header + "\r\n" + content;
+                send(clientFd, msg.c_str(), msg.size(), 0);
+            } else {
+                std::string contentLengthHeader = "Content-Length: 0";
+                std::string header =
+                        "Content-Type: text/html\r\n"
+                        "Accept-Ranges: bytes\r\n"
+                        "Connection: keep-alive\r\n"
+                        + contentLengthHeader + "\r\n";
+                std::string msg = NOT_FOUND + header + "\r\n";
                 send(clientFd, msg.c_str(), msg.size(), 0);
             }
         });

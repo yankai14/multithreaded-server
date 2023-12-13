@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <BaseSocket.h>
+#include <../utils.h>
 #include <memory>
 
 namespace Application {
@@ -30,18 +31,22 @@ namespace Application {
         std::string secFetchUser;
     };
 
+    extern std::string BAD_REQUEST;
+    extern std::string OK;
+    extern std::string NOT_FOUND;
+    extern std::string CREATED;
+
     class HTTP {
     private:
         std::unique_ptr<Transport::BaseSocket> serverSocket;
-        std::unordered_map<std::string, std::string> headers;
         int kq = -1;
         struct kevent events[MAX_EVENTS]{};
         ThreadPool threadpool;
-        std::unordered_map<std::string, std::function<std::string(HTTP*, HttpRequest&)>> router;
+        std::unordered_map<std::string, std::function<std::string(HTTP*, std::unordered_map<std::string, std::string>&)>> router;
 
         static void handleSIGINT(int signal);
 
-        static HttpRequest parse(std::istringstream iss);
+        static void parse(std::istringstream iss, std::unordered_map<std::string, std::string>& headers);
         int initKq();
         int registerServerFdToKq() const;
         int handleAcceptEvent() const;
@@ -50,7 +55,7 @@ namespace Application {
         void cleanup() const;
     public:
         HTTP(int port, int workers);
-        void registerEndpoint(const std::string& method, const std::string& path, std::function<std::string(HTTP*, HttpRequest&)> handler);
+        void registerEndpoint(const std::string& method, const std::string& path, std::function<std::string(HTTP*, std::unordered_map<std::string, std::string>&)> handler);
         void startServer();
     };
 
